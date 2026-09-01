@@ -9,6 +9,7 @@
   },
   "scripts": {
     "migrate": "node db/migrate.js",
+    "fix:qualifiers": "node db/fix_invalid_qualifiers.js",
     "collect": "node src/collector/index.js",
     "web": "node src/web/server.js",
     "dev:web": "node src/web/server.js"

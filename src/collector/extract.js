@@ -1,5 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { extractionSchema } = require('../shared/extractionSchema');
+const { TECH_CATEGORY_QUALIFIER, DEAL_TYPE_QUALIFIER, CAPITAL_SOURCE_QUALIFIER } = require('../shared/taxonomy');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -51,9 +52,12 @@ const SYSTEM_PROMPT = `You extract structured geothermal energy investment/fundi
  * Roll up the model's confidence_signals into a high/medium/low label. Deliberately
  * rule-based rather than trusting a self-reported score (see architecture-proposal.md §2):
  * a deal only counts as "high" confidence when the concrete, checkable signals all line up.
+ * hadInvalidQualifier (see sanitizeQualifiers below) always caps it at "low" — a model
+ * that couldn't fit its own answer into the closed taxonomy is not a deal to auto-publish.
  */
-function computeConfidence(result) {
+function computeConfidence(result, hadInvalidQualifier = false) {
   if (!result.is_relevant) return 'low';
+  if (hadInvalidQualifier) return 'low';
   const s = result.confidence_signals || {};
   const hasCore = Boolean(result.recipient) && result.deal_type && result.tech_category;
   if (!hasCore) return 'low';
@@ -63,6 +67,48 @@ function computeConfidence(result) {
   if (strongSignals === 3 && s.source_is_primary) return 'high';
   if (strongSignals >= 2) return 'medium';
   return 'low';
+}
+
+/**
+ * The Claude API treats a tool-use JSON schema's "enum" list as guidance, not a hard
+ * constraint — it does not reject a response that ignores it. In production this showed
+ * up as tech_type_qualifier coming back as a full descriptive sentence (e.g. "Geothermal
+ * boreholes with heat pumps for district heating...") instead of one of the closed-list
+ * codes (e.g. "heat_pump_or_district_heating"), which then displayed raw in the dashboard.
+ * Re-validate every qualifier here against the real taxonomy list for its parent value
+ * rather than trusting the model. A parent value whose list is empty (deal_type "other",
+ * tech_category "other_enabling_technology", capital_source "unclear") is a deliberate
+ * free-text bucket — those pass through capped to a sane length, not rejected. Returns
+ * whether anything had to be dropped, so the caller can force the deal to review instead
+ * of silently publishing something whose own taxonomy fields didn't fit the taxonomy.
+ */
+function normalizeQualifier(parentValue, qualifierValue, qualifierMap) {
+  if (!qualifierValue) return { value: null, invalid: false };
+  const allowed = qualifierMap[parentValue];
+  if (!allowed) return { value: null, invalid: true }; // parent value itself unrecognized
+  if (allowed.length === 0) return { value: String(qualifierValue).slice(0, 120), invalid: false }; // free-text bucket
+  if (allowed.includes(qualifierValue)) return { value: qualifierValue, invalid: false };
+  return { value: null, invalid: true };
+}
+
+function sanitizeQualifiers(result) {
+  let invalidFound = false;
+
+  const tech = normalizeQualifier(result.tech_category, result.tech_type_qualifier, TECH_CATEGORY_QUALIFIER);
+  result.tech_type_qualifier = tech.value;
+  invalidFound = invalidFound || tech.invalid;
+
+  const deal = normalizeQualifier(result.deal_type, result.deal_type_qualifier, DEAL_TYPE_QUALIFIER);
+  result.deal_type_qualifier = deal.value;
+  invalidFound = invalidFound || deal.invalid;
+
+  for (const inv of result.investors || []) {
+    const cap = normalizeQualifier(inv.capital_source, inv.capital_source_qualifier, CAPITAL_SOURCE_QUALIFIER);
+    inv.capital_source_qualifier = cap.value;
+    invalidFound = invalidFound || cap.invalid;
+  }
+
+  return invalidFound;
 }
 
 /**
@@ -86,9 +132,11 @@ async function extractDeal(article, articleText) {
 
   if (!result || !result.is_relevant) return null;
 
+  const hadInvalidQualifier = sanitizeQualifiers(result);
+
   return {
     ...result,
-    confidence: computeConfidence(result),
+    confidence: computeConfidence(result, hadInvalidQualifier),
   };
 }
 
