@@ -120,41 +120,106 @@ async function loadDealFeed() {
     </tr>`).join('') : '<tr><td colspan="9" class="empty-state">No published deals yet — the collector runs daily.</td></tr>';
 }
 
-async function loadReviewQueue() {
-  const deals = await fetchJson('/api/deals?status=pending_review&limit=50');
-  const tbody = document.getElementById('review-tbody');
-  tbody.innerHTML = deals.map((d) => `
+let TAXONOMY = null;
+let reviewDealsById = {};
+
+function viewRow(d) {
+  return `
     <tr id="review-row-${d.id}">
       <td>${d.recipient || '(unnamed)'}</td>
       <td>${dealLabel(d)}</td>
       <td>${d.amount ? fmtUsd(d.amount_usd || d.amount) : 'Undisclosed'}</td>
       <td>${TECH_LABELS[d.tech_type] || d.tech_type}</td>
-      <td>${d.announced_date || '—'}</td>
+      <td>${d.announced_date ? d.announced_date.slice(0, 10) : '—'}</td>
       <td><a href="${d.source_url}" target="_blank" rel="noopener">Source</a></td>
       <td class="review-actions">
-        <button class="approve" data-id="${d.id}" data-decision="approved">Approve</button>
-        <button class="reject" data-id="${d.id}" data-decision="rejected">Reject</button>
+        <button class="approve" data-id="${d.id}" data-action="approve">Approve</button>
+        <button class="reject" data-id="${d.id}" data-action="reject">Reject</button>
+        <button class="edit" data-id="${d.id}" data-action="edit">Edit</button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+}
 
-  tbody.addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-id]');
-    if (!btn) return;
-    btn.disabled = true;
-    try {
-      await fetchJson(`/api/deals/${btn.dataset.id}/review`, {
+function optionList(values, selected) {
+  return values.map((v) => `<option value="${v}" ${v === selected ? 'selected' : ''}>${v.replace(/_/g, ' ')}</option>`).join('');
+}
+
+function editRow(d) {
+  const dealTypes = TAXONOMY ? TAXONOMY.DEAL_TYPE : [d.deal_type];
+  const techTypes = TAXONOMY ? TAXONOMY.TECH_TYPE : [d.tech_type];
+  return `
+    <tr id="review-row-${d.id}" class="editing">
+      <td><input type="text" data-field="recipient" value="${d.recipient || ''}" placeholder="Recipient"></td>
+      <td>
+        <select data-field="deal_type">${optionList(dealTypes, d.deal_type)}</select>
+        <input type="text" data-field="deal_type_qualifier" value="${d.deal_type_qualifier || ''}" placeholder="qualifier">
+      </td>
+      <td>
+        <input type="number" data-field="amount" value="${d.amount || ''}" placeholder="Amount" style="width:90px">
+        <input type="text" data-field="currency" value="${d.currency || ''}" placeholder="USD" style="width:50px">
+      </td>
+      <td><select data-field="tech_type">${optionList(techTypes, d.tech_type)}</select></td>
+      <td><input type="date" data-field="announced_date" value="${d.announced_date ? d.announced_date.slice(0, 10) : ''}"></td>
+      <td><a href="${d.source_url}" target="_blank" rel="noopener">Source</a></td>
+      <td class="review-actions">
+        <button class="approve" data-id="${d.id}" data-action="save">Save</button>
+        <button class="reject" data-id="${d.id}" data-action="cancel">Cancel</button>
+      </td>
+    </tr>`;
+}
+
+async function loadReviewQueue() {
+  if (!TAXONOMY) {
+    try { TAXONOMY = await fetchJson('/api/taxonomy'); } catch (err) { console.error(err); }
+  }
+  const deals = await fetchJson('/api/deals?status=pending_review&limit=50');
+  reviewDealsById = Object.fromEntries(deals.map((d) => [d.id, d]));
+  const tbody = document.getElementById('review-tbody');
+  tbody.innerHTML = deals.map(viewRow).join('');
+}
+
+document.getElementById('review-tbody').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-id]');
+  if (!btn) return;
+  const { id, action } = btn.dataset;
+  const row = document.getElementById(`review-row-${id}`);
+
+  if (action === 'edit') {
+    row.outerHTML = editRow(reviewDealsById[id]);
+    return;
+  }
+  if (action === 'cancel') {
+    row.outerHTML = viewRow(reviewDealsById[id]);
+    return;
+  }
+
+  btn.disabled = true;
+  try {
+    if (action === 'save') {
+      const fields = {};
+      row.querySelectorAll('[data-field]').forEach((el) => { fields[el.dataset.field] = el.value || null; });
+      if (fields.amount !== null) fields.amount = Number(fields.amount);
+      const updated = await fetchJson(`/api/deals/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fields),
+      });
+      reviewDealsById[id] = { ...reviewDealsById[id], ...updated };
+      row.outerHTML = viewRow(reviewDealsById[id]);
+    } else if (action === 'approve' || action === 'reject') {
+      await fetchJson(`/api/deals/${id}/review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision: btn.dataset.decision }),
+        body: JSON.stringify({ decision: action === 'approve' ? 'approved' : 'rejected' }),
       });
-      document.getElementById(`review-row-${btn.dataset.id}`).remove();
+      row.remove();
       loadDealFeed(); // approved deals now show in the main feed
-    } catch (err) {
-      console.error(err);
-      btn.disabled = false;
     }
-  }, { once: true });
-}
+  } catch (err) {
+    console.error(err);
+    btn.disabled = false;
+  }
+});
 
 Promise.all([loadSummary(), loadQuarterTrend(), loadTechChart(), loadGeoChart(), loadDealFeed()])
   .catch((err) => console.error('[dashboard] load failed', err));

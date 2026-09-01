@@ -1,5 +1,8 @@
 const express = require('express');
 const { pool } = require('../db');
+const taxonomy = require('../../shared/taxonomy');
+const { toUsd } = require('../../collector/currency');
+const { buildDedupKey } = require('../../collector/dedup');
 
 const router = express.Router();
 
@@ -117,6 +120,73 @@ router.get('/deals', async (req, res, next) => {
     }));
   } catch (err) { next(err); }
 });
+
+router.get('/taxonomy', (req, res) => {
+  res.json(taxonomy);
+});
+
+// Editable fields for a pending-review deal, before you approve/reject it. Deliberately
+// deal-level only for now (not the investors array) — see architecture-proposal.md
+// follow-up note. Restricted to pending_review deals: an already-published deal isn't
+// editable through this endpoint, so a correction there means reject + wait for the
+// next scan, or a direct DB fix, until this gets extended.
+const EDITABLE_FIELDS = [
+  'recipient', 'deal_type', 'deal_type_qualifier', 'amount', 'currency',
+  'announced_date', 'tech_type', 'tech_type_qualifier', 'geography_country', 'geography_region',
+];
+
+router.put('/deals/:id', async (req, res, next) => {
+  try {
+    const current = await pool.query('SELECT * FROM deals WHERE id = $1', [req.params.id]);
+    if (current.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    if (current.rows[0].review_status !== 'pending_review') {
+      return res.status(400).json({ error: 'Only pending-review deals can be edited' });
+    }
+
+    const updates = { ...current.rows[0], ...pickEditable(req.body) };
+    // pg returns DATE columns as JS Date objects, not the 'YYYY-MM-DD' strings the
+    // collector writes — normalize here so an edit that doesn't touch announced_date
+    // (falling back to the DB's Date object) still produces a dedup key in the same
+    // format as every key the collector itself generates.
+    if (updates.announced_date instanceof Date) {
+      updates.announced_date = updates.announced_date.toISOString().slice(0, 10);
+    }
+
+    if (updates.deal_type && !taxonomy.DEAL_TYPE.includes(updates.deal_type)) {
+      return res.status(400).json({ error: `Invalid deal_type: ${updates.deal_type}` });
+    }
+    if (updates.tech_type && !taxonomy.TECH_TYPE.includes(updates.tech_type)) {
+      return res.status(400).json({ error: `Invalid tech_type: ${updates.tech_type}` });
+    }
+
+    const amount_usd = toUsd(updates.amount, updates.currency);
+    const dedup_key = buildDedupKey({
+      recipient: updates.recipient, deal_type: updates.deal_type,
+      amount_usd, announced_date: updates.announced_date,
+    });
+
+    const { rows } = await pool.query(
+      `UPDATE deals SET recipient=$1, deal_type=$2, deal_type_qualifier=$3, amount=$4, currency=$5,
+         amount_usd=$6, announced_date=$7, tech_type=$8, tech_type_qualifier=$9,
+         geography_country=$10, geography_region=$11, dedup_key=$12, updated_at=now()
+       WHERE id=$13 AND review_status = 'pending_review' RETURNING *`,
+      [
+        updates.recipient, updates.deal_type, updates.deal_type_qualifier, updates.amount, updates.currency,
+        amount_usd, updates.announced_date, updates.tech_type, updates.tech_type_qualifier,
+        updates.geography_country, updates.geography_region, dedup_key, req.params.id,
+      ]
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+function pickEditable(body) {
+  const out = {};
+  for (const field of EDITABLE_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(body, field)) out[field] = body[field] || null;
+  }
+  return out;
+}
 
 router.post('/deals/:id/review', async (req, res, next) => {
   try {
