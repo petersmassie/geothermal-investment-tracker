@@ -1,0 +1,53 @@
+# Render Blueprint — defines all three pieces from the architecture proposal as one
+# deployable unit. Deploy via Render's "New > Blueprint" pointed at this repo; Render
+# will read this file and provision all three services + wire up DATABASE_URL
+# automatically via `fromDatabase`. ANTHROPIC_API_KEY still needs to be set manually
+# (marked sync: false below) since it's a secret this file shouldn't contain.
+
+databases:
+  - name: geothermal-investment-db
+    plan: starter
+    databaseName: geothermal_investment
+    user: geothermal_investment
+
+services:
+  - type: cron
+    name: geothermal-investment-collector
+    runtime: node
+    plan: starter
+    schedule: "0 12 * * *" # 12:00 UTC daily — adjust to your preferred run time
+    buildCommand: npm install
+    startCommand: node src/collector/index.js
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: geothermal-investment-db
+          property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: EXTRACTION_MODEL
+        value: claude-haiku-4-5
+      - key: ESCALATION_MODEL
+        value: claude-sonnet-4-5
+      - key: AUTO_PUBLISH_THRESHOLD
+        value: high
+
+  - type: web
+    name: geothermal-investment-web
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node src/web/server.js
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: geothermal-investment-db
+          property: connectionString
+
+# After the first deploy: run `npm run migrate` once (Render Shell on the web service,
+# or from your own machine against the database's External Database URL) to create the
+# schema before the collector's first scheduled run.
+#
+# DNS: add a CNAME record for geo.massieenergy.com pointed at the web service's
+# Render-provided hostname, then add the custom domain in the web service's Settings —
+# same steps as grid.massieenergy.com.

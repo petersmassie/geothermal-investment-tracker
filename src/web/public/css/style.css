@@ -1,0 +1,135 @@
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --gridline: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+
+  --series-1: #2a78d6; /* blue   — investment / EGS */
+  --series-2: #eb6834; /* orange — acquisitions / conventional hydrothermal */
+  --series-3: #1baf7a; /* aqua   — AGS */
+  --series-4: #eda100; /* yellow — direct-use */
+  --series-5: #e87ba4; /* magenta — heat pump / district heating */
+  --series-6: #4a3aa7; /* violet — unspecified tech */
+
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --gridline: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #9085e9;
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-critical: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --gridline: #2c2c2a;
+  --baseline: #383835;
+  --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #9085e9;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+}
+
+header {
+  padding: 24px clamp(16px, 4vw, 40px);
+  border-bottom: 1px solid var(--border);
+}
+header h1 { margin: 0 0 4px; font-size: 20px; }
+header p { margin: 0; color: var(--text-secondary); }
+
+main { padding: 24px clamp(16px, 4vw, 40px) 64px; max-width: 1200px; margin: 0 auto; }
+
+section { margin-bottom: 40px; }
+section h2 { font-size: 15px; color: var(--text-secondary); font-weight: 600; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.kpi-tile {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px 18px;
+}
+.kpi-tile .value { font-size: 28px; font-weight: 600; font-variant-numeric: proportional-nums; }
+.kpi-tile .label { color: var(--text-secondary); font-size: 13px; margin-top: 2px; }
+.kpi-tile .sub { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
+
+.chart-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+@media (max-width: 800px) { .chart-grid { grid-template-columns: 1fr; } }
+
+.chart-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px;
+}
+.chart-card h3 { margin: 0 0 4px; font-size: 14px; }
+.chart-card .chart-note { color: var(--text-muted); font-size: 12px; margin: 0 0 14px; }
+
+.legend { display: flex; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
+
+.quarter-chart { display: flex; align-items: flex-end; gap: 10px; height: 160px; border-bottom: 1px solid var(--baseline); padding-bottom: 2px; }
+.quarter-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; height: 100%; }
+.quarter-bars { display: flex; align-items: flex-end; gap: 3px; height: 100%; width: 100%; justify-content: center; }
+.bar { width: 14px; border-radius: 3px 3px 0 0; min-height: 2px; }
+.quarter-label { font-size: 10px; color: var(--text-muted); margin-top: 6px; white-space: nowrap; }
+
+.hbar-row { display: grid; grid-template-columns: 130px 1fr 90px; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 12px; }
+.hbar-track { background: var(--gridline); border-radius: 3px; height: 10px; overflow: hidden; }
+.hbar-fill { height: 100%; border-radius: 3px; }
+.hbar-value { text-align: right; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.hbar-label { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; padding: 8px 10px; border-bottom: 1px solid var(--baseline); }
+td { padding: 10px; border-bottom: 1px solid var(--gridline); vertical-align: top; }
+tr:hover td { background: rgba(128,128,128,0.05); }
+a { color: var(--series-1); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.badge.confidence-high { background: color-mix(in srgb, var(--status-good) 18%, transparent); color: var(--status-good); }
+.badge.confidence-medium { background: color-mix(in srgb, var(--status-warning) 22%, transparent); color: #8a5c00; }
+.badge.confidence-low { background: color-mix(in srgb, var(--status-critical) 18%, transparent); color: var(--status-critical); }
+
+.review-actions button { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; margin-right: 6px; }
+.review-actions button.approve { color: var(--status-good); }
+.review-actions button.reject { color: var(--status-critical); }
+
+.empty-state { color: var(--text-muted); font-style: italic; padding: 20px 0; }
