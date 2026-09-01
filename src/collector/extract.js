@@ -33,7 +33,19 @@ const SYSTEM_PROMPT = `You extract structured geothermal energy investment/fundi
    than true when in doubt.
 
 7. excerpt must be a real, short, verbatim quote from the article text supporting the
-   extraction — not a paraphrase.`;
+   extraction — not a paraphrase.
+
+8. tech_category vs. tech_type_qualifier: tech_category is which part of the geothermal
+   value chain the deal targets, not the specific technology. A company building or
+   operating an actual geothermal power/heat project (EGS, conventional hydrothermal, AGS,
+   direct-use, heat pump/district heating) is "resource_development" — the specific type
+   goes in tech_type_qualifier. A company building drilling hardware, subsurface imaging,
+   or exploration technology that could serve future resource-development projects but is
+   not itself a resource project — e.g. Quaise Energy's millimeter-wave drilling — is
+   "drilling_or_subsurface_technology", NOT resource_development, even if the article
+   mentions EGS or superhot rock as the eventual application. A hardware/materials supplier
+   (turbines, heat exchangers, high-temperature components) is "equipment_or_components".
+   Only use "other_enabling_technology" when none of the above fit.`;
 
 /**
  * Roll up the model's confidence_signals into a high/medium/low label. Deliberately
@@ -43,7 +55,7 @@ const SYSTEM_PROMPT = `You extract structured geothermal energy investment/fundi
 function computeConfidence(result) {
   if (!result.is_relevant) return 'low';
   const s = result.confidence_signals || {};
-  const hasCore = Boolean(result.recipient) && result.deal_type && result.tech_type;
+  const hasCore = Boolean(result.recipient) && result.deal_type && result.tech_category;
   if (!hasCore) return 'low';
 
   const strongSignals = [s.amount_stated, s.recipient_named_specifically, s.investor_named].filter(Boolean).length;

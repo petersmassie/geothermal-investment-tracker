@@ -9,11 +9,32 @@ const fmtQuarter = (isoDate) => {
   const q = Math.floor(d.getUTCMonth() / 3) + 1;
   return `Q${q} ${d.getUTCFullYear()}`;
 };
+// Covers both tiers of the tech taxonomy: resource_development's specific
+// technologies (egs, ags, ...) AND the enabling-technology categories themselves
+// (drilling_or_subsurface_technology, etc.), since by-tech chart rows and deal rows
+// can surface either depending on tech_category — see techLabel()/techKey() below.
 const TECH_LABELS = {
   egs: 'EGS', conventional_hydrothermal: 'Conventional hydrothermal', ags: 'AGS',
   direct_use: 'Direct use', heat_pump_or_district_heating: 'Heat pump / district heating', unspecified: 'Unspecified',
+  drilling_or_subsurface_technology: 'Drilling / subsurface technology',
+  equipment_or_components: 'Equipment / components',
+  other_enabling_technology: 'Other enabling technology',
 };
-const TECH_COLORS = { egs: 'var(--series-1)', conventional_hydrothermal: 'var(--series-2)', ags: 'var(--series-3)', direct_use: 'var(--series-4)', heat_pump_or_district_heating: 'var(--series-5)', unspecified: 'var(--series-6)' };
+const TECH_COLORS = {
+  egs: 'var(--series-1)', conventional_hydrothermal: 'var(--series-2)', ags: 'var(--series-3)',
+  direct_use: 'var(--series-4)', heat_pump_or_district_heating: 'var(--series-5)', unspecified: 'var(--series-6)',
+  drilling_or_subsurface_technology: 'var(--series-2)', equipment_or_components: 'var(--series-4)', other_enabling_technology: 'var(--series-6)',
+};
+// A deal's display tech key: resource_development shows its specific technology
+// (falls back to 'unspecified'); every enabling-technology category shows as itself,
+// since a further breakdown doesn't apply the same way there.
+function techKey(d) {
+  return d.tech_category === 'resource_development' ? (d.tech_type_qualifier || 'unspecified') : d.tech_category;
+}
+function techLabel(d) {
+  const key = techKey(d);
+  return TECH_LABELS[key] || key;
+}
 
 async function fetchJson(url, opts) {
   const res = await fetch(url, opts);
@@ -74,8 +95,8 @@ async function loadTechChart() {
   const max = Math.max(1, ...rows.map((r) => r.total_usd));
   document.getElementById('tech-chart').innerHTML = rows.length ? rows.map((r) => `
     <div class="hbar-row">
-      <div class="hbar-label">${TECH_LABELS[r.tech_type] || r.tech_type}</div>
-      <div class="hbar-track"><div class="hbar-fill" style="width:${(r.total_usd / max) * 100}%; background:${TECH_COLORS[r.tech_type] || 'var(--series-6)'}"></div></div>
+      <div class="hbar-label">${TECH_LABELS[r.tech_key] || r.tech_key}</div>
+      <div class="hbar-track"><div class="hbar-fill" style="width:${(r.total_usd / max) * 100}%; background:${TECH_COLORS[r.tech_key] || 'var(--series-6)'}"></div></div>
       <div class="hbar-value">${fmtUsd(r.total_usd)}</div>
     </div>`).join('') : '<p class="empty-state">No data yet.</p>';
 }
@@ -112,7 +133,7 @@ async function loadDealFeed() {
       <td>${investorNames(d)}</td>
       <td>${dealLabel(d)}</td>
       <td>${d.amount ? `${fmtUsd(d.amount_usd || d.amount)}${d.currency && d.currency !== 'USD' ? ` (${d.amount.toLocaleString()} ${d.currency})` : ''}` : 'Undisclosed'}</td>
-      <td>${TECH_LABELS[d.tech_type] || d.tech_type}</td>
+      <td>${techLabel(d)}</td>
       <td>${d.geography_country || '—'}</td>
       <td>${d.announced_date || '—'}</td>
       <td>${confidenceBadge(d.confidence)}</td>
@@ -123,13 +144,20 @@ async function loadDealFeed() {
 let TAXONOMY = null;
 let reviewDealsById = {};
 
+function duplicateWarning(d) {
+  if (!d.possible_duplicate_of_id) return '';
+  const amt = d.duplicate_of_amount_usd ? fmtUsd(d.duplicate_of_amount_usd) : 'undisclosed amount';
+  const date = d.duplicate_of_announced_date ? d.duplicate_of_announced_date.slice(0, 10) : 'undated';
+  return `<div class="dup-warning">⚠ possibly the same deal as <strong>${d.duplicate_of_recipient}</strong> (${amt}, ${date}, deal #${d.possible_duplicate_of_id}) — check before approving</div>`;
+}
+
 function viewRow(d) {
   return `
     <tr id="review-row-${d.id}">
-      <td>${d.recipient || '(unnamed)'}</td>
+      <td>${d.recipient || '(unnamed)'}${duplicateWarning(d)}</td>
       <td>${dealLabel(d)}</td>
       <td>${d.amount ? fmtUsd(d.amount_usd || d.amount) : 'Undisclosed'}</td>
-      <td>${TECH_LABELS[d.tech_type] || d.tech_type}</td>
+      <td>${techLabel(d)}</td>
       <td>${d.announced_date ? d.announced_date.slice(0, 10) : '—'}</td>
       <td><a href="${d.source_url}" target="_blank" rel="noopener">Source</a></td>
       <td class="review-actions">
@@ -146,10 +174,10 @@ function optionList(values, selected) {
 
 function editRow(d) {
   const dealTypes = TAXONOMY ? TAXONOMY.DEAL_TYPE : [d.deal_type];
-  const techTypes = TAXONOMY ? TAXONOMY.TECH_TYPE : [d.tech_type];
+  const techCategories = TAXONOMY ? TAXONOMY.TECH_CATEGORY : [d.tech_category];
   return `
     <tr id="review-row-${d.id}" class="editing">
-      <td><input type="text" data-field="recipient" value="${d.recipient || ''}" placeholder="Recipient"></td>
+      <td><input type="text" data-field="recipient" value="${d.recipient || ''}" placeholder="Recipient">${duplicateWarning(d)}</td>
       <td>
         <select data-field="deal_type">${optionList(dealTypes, d.deal_type)}</select>
         <input type="text" data-field="deal_type_qualifier" value="${d.deal_type_qualifier || ''}" placeholder="qualifier">
@@ -158,7 +186,10 @@ function editRow(d) {
         <input type="number" data-field="amount" value="${d.amount || ''}" placeholder="Amount" style="width:90px">
         <input type="text" data-field="currency" value="${d.currency || ''}" placeholder="USD" style="width:50px">
       </td>
-      <td><select data-field="tech_type">${optionList(techTypes, d.tech_type)}</select></td>
+      <td>
+        <select data-field="tech_category">${optionList(techCategories, d.tech_category)}</select>
+        <input type="text" data-field="tech_type_qualifier" value="${d.tech_type_qualifier || ''}" placeholder="e.g. egs, millimeter_wave_drilling">
+      </td>
       <td><input type="date" data-field="announced_date" value="${d.announced_date ? d.announced_date.slice(0, 10) : ''}"></td>
       <td><a href="${d.source_url}" target="_blank" rel="noopener">Source</a></td>
       <td class="review-actions">

@@ -132,4 +132,14 @@ a:hover { text-decoration: underline; }
 .review-actions button.approve { color: var(--status-good); }
 .review-actions button.reject { color: var(--status-critical); }
 
+.dup-warning {
+  margin-top: 6px; padding: 6px 8px; border-radius: 6px; font-size: 11px; max-width: 260px;
+  background: color-mix(in srgb, var(--status-warning) 16%, transparent);
+  color: #8a5c00;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .dup-warning { color: var(--status-warning); }
+}
+:root[data-theme="dark"] .dup-warning { color: var(--status-warning); }
+
 .empty-state { color: var(--text-muted); font-style: italic; padding: 20px 0; }

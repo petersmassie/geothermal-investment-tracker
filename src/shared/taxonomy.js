@@ -38,14 +38,43 @@ const DEAL_TYPE_QUALIFIER = {
   other: [], // free text only — this bucket exists precisely for what doesn't fit elsewhere
 };
 
-const TECH_TYPE = [
-  'egs', // enhanced geothermal systems, includes open-loop
-  'conventional_hydrothermal',
-  'ags', // advanced geothermal systems, includes closed-loop
-  'direct_use',
-  'heat_pump_or_district_heating',
-  'unspecified',
+// Technology taxonomy v2 (revised 2026-09-01 — the original single-axis TECH_TYPE
+// conflated "what kind of geothermal resource/system" with "what part of the value
+// chain" a deal targets. A deal like Quaise Energy's (millimeter-wave drilling tech
+// to reach superhot rock) isn't EGS/AGS/hydrothermal/etc. itself — it's an enabling
+// technology that could serve any future resource-development project. Split into a
+// category (which part of the value chain) and a qualifier (the specific technology
+// within that category), same pattern as capital source and deal type.
+const TECH_CATEGORY = [
+  'resource_development', // the actual generation/heat system — what TECH_TYPE used to mean entirely
+  'drilling_or_subsurface_technology', // e.g. Quaise's millimeter-wave drilling, subsurface imaging/exploration
+  'equipment_or_components', // turbines, heat exchangers, high-temperature materials, etc.
+  'other_enabling_technology',
 ];
+
+const TECH_CATEGORY_QUALIFIER = {
+  resource_development: [
+    'egs', // enhanced geothermal systems, includes open-loop
+    'conventional_hydrothermal',
+    'ags', // advanced geothermal systems, includes closed-loop
+    'direct_use',
+    'heat_pump_or_district_heating',
+    'unspecified',
+  ],
+  drilling_or_subsurface_technology: [
+    'millimeter_wave_drilling',
+    'plasma_or_other_advanced_drilling',
+    'subsurface_imaging_or_exploration',
+    'other_drilling_or_subsurface',
+  ],
+  equipment_or_components: [
+    'turbines_or_generation_equipment',
+    'heat_exchangers',
+    'high_temperature_materials',
+    'other_equipment',
+  ],
+  other_enabling_technology: [], // free text — this bucket exists precisely for what doesn't fit elsewhere
+};
 
 const CONFIDENCE = ['high', 'medium', 'low'];
 
@@ -56,7 +85,8 @@ module.exports = {
   CAPITAL_SOURCE_QUALIFIER,
   DEAL_TYPE,
   DEAL_TYPE_QUALIFIER,
-  TECH_TYPE,
+  TECH_CATEGORY,
+  TECH_CATEGORY_QUALIFIER,
   CONFIDENCE,
   REVIEW_STATUS,
 };

@@ -1,5 +1,11 @@
--- Geothermal Investment Tracker — schema v1 (taxonomy v3, agreed 2026-09-01)
--- Run via `npm run migrate` (db/migrate.js), idempotent (IF NOT EXISTS throughout).
+-- Geothermal Investment Tracker — schema v2 (taxonomy v3 + two-tier tech taxonomy +
+-- fuzzy dedup support, 2026-09-01). This file is the target schema for a FRESH
+-- install (CREATE TABLE IF NOT EXISTS throughout, so re-running it is always safe).
+-- An already-deployed database that was created under schema v1 needs
+-- db/migrations/001_tech_taxonomy_and_dedup.sql to get here — see db/migrate.js,
+-- which applies this file and then every migration in order automatically.
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm; -- fuzzy text matching, used for duplicate detection
 
 CREATE TABLE IF NOT EXISTS deals (
   id                    SERIAL PRIMARY KEY,
@@ -10,7 +16,10 @@ CREATE TABLE IF NOT EXISTS deals (
   currency              TEXT,
   amount_usd            NUMERIC, -- normalized at write time for cross-currency aggregation; null if amount/currency undisclosed or conversion unavailable
   announced_date        DATE,
-  tech_type             TEXT NOT NULL CHECK (tech_type IN ('egs','conventional_hydrothermal','ags','direct_use','heat_pump_or_district_heating','unspecified')),
+  -- Two-tier tech taxonomy: tech_category is which part of the geothermal value chain
+  -- a deal targets (resource_development vs. enabling technology like drilling); the
+  -- specific technology (EGS, millimeter-wave drilling, etc.) goes in tech_type_qualifier.
+  tech_category         TEXT NOT NULL CHECK (tech_category IN ('resource_development','drilling_or_subsurface_technology','equipment_or_components','other_enabling_technology')),
   tech_type_qualifier   TEXT,
   geography_country     TEXT,
   geography_region      TEXT,
@@ -21,18 +30,31 @@ CREATE TABLE IF NOT EXISTS deals (
   confidence_signals    JSONB,
   review_status         TEXT NOT NULL DEFAULT 'pending_review' CHECK (review_status IN ('auto_published','pending_review','approved','rejected')),
   dedup_key             TEXT,
+  -- Set when the fuzzy-match check at insert time finds a probable (not certain) match
+  -- to an existing deal — the new row is still created, but forced into review rather
+  -- than auto-published, so a human confirms whether it's a real duplicate.
+  possible_duplicate_of_id INTEGER REFERENCES deals(id),
   extraction_model      TEXT,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Prevents the same underlying deal (same recipient + amount + date, roughly) from
--- being inserted twice when multiple sources cover the same announcement.
+-- being inserted twice when multiple sources cover the same announcement. This exact-
+-- match key is the first, cheap check; findSimilarDeal() (src/collector/dedup.js) is
+-- the fuzzy second check for cases where recipient name/date/amount don't match exactly.
 CREATE UNIQUE INDEX IF NOT EXISTS deals_dedup_key_idx ON deals (dedup_key) WHERE dedup_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS deals_announced_date_idx ON deals (announced_date);
 CREATE INDEX IF NOT EXISTS deals_review_status_idx ON deals (review_status);
 CREATE INDEX IF NOT EXISTS deals_deal_type_idx ON deals (deal_type);
-CREATE INDEX IF NOT EXISTS deals_tech_type_idx ON deals (tech_type);
+-- deals_tech_category_idx and deals_recipient_trgm_idx are created in
+-- db/migrations/001_tech_taxonomy_and_dedup.sql, not here — on a database that
+-- already existed under schema v1 (tech_type, no trigram support), this CREATE TABLE
+-- is a no-op (the table already exists), so an index on tech_category here would fail
+-- with "column does not exist" until migration 001 has actually added that column.
+-- The migration creates both indexes once the columns/extension it depends on exist;
+-- on a truly fresh install migration 001 still runs (see db/migrate.js) and creates
+-- them there instead, so both paths end up with the same indexes either way.
 
 -- One row per investor per deal. A single-investor deal still gets exactly one row here.
 -- capital_source lives per-investor (not on `deals`) so a mixed public+private round

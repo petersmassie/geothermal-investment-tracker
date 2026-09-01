@@ -88,7 +88,7 @@ async function processArticle(article, stats) {
     currency: extracted.currency,
     amount_usd,
     announced_date: extracted.announced_date,
-    tech_type: extracted.tech_type,
+    tech_category: extracted.tech_category,
     tech_type_qualifier: extracted.tech_type_qualifier,
     geography_country: extracted.geography_country,
     geography_region: extracted.geography_region,
@@ -110,13 +110,19 @@ async function processArticle(article, stats) {
     is_lead_investor: inv.is_lead_investor,
   }));
 
-  const { id: dealId, isNew } = await db.insertDeal(deal, investors);
-  await db.recordIngestedArticle({ ...article, passed_prefilter: true, is_relevant: true, deal_id: dealId });
+  const inserted = await db.insertDeal(deal, investors);
+  await db.recordIngestedArticle({ ...article, passed_prefilter: true, is_relevant: true, deal_id: inserted.id });
 
-  if (isNew) {
+  if (inserted.isNew) {
     stats.dealsCreated += 1;
-    if (review_status === 'auto_published') stats.dealsAutoPublished += 1;
+    // Use the actual status insertDeal settled on, not the pre-dedup-check local
+    // variable above — a fuzzy "candidate" match forces review_status to
+    // pending_review even when the extraction itself was high-confidence.
+    if (inserted.reviewStatus === 'auto_published') stats.dealsAutoPublished += 1;
     else stats.dealsQueuedForReview += 1;
+    if (inserted.possibleDuplicateOfId) {
+      console.log(`[collector] Deal ${inserted.id} flagged as possible duplicate of deal ${inserted.possibleDuplicateOfId}.`);
+    }
   }
 }
 
