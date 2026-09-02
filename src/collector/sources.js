@@ -7,12 +7,24 @@ const RSS_FEEDS = [
   { name: 'Geothermal Rising', url: 'https://www.geothermal.org/our-impact/blog/feed' },
   { name: 'Eavor', url: 'https://eavor.com/feed/' },
   { name: 'Dandelion Energy', url: 'https://dandelionenergy.com/feed' },
-  // Company/association/government feeds without a confirmed working RSS URL at
-  // proposal time — verify and uncomment/add before the first production run:
+  // Verified working 2026-09-02 (curl'd directly, confirmed 10 real items) — the
+  // proposal-time placeholder URL was wrong; this is the real feed URL.
+  { name: 'DOE Geothermal Technologies Office', url: 'https://www.energy.gov/rss/hgeo-geothermal/900546' },
+  // Company/association feeds without a confirmed working RSS URL as of 2026-09-02 —
+  // verify before uncommenting:
   // { name: 'Fervo Energy', url: 'https://fervoenergy.com/feed/' },
   // { name: 'Sage Geosystems', url: 'https://sagegeosystems.com/feed/' },
   // { name: 'GreenFire Energy', url: 'https://greenfireenergy.com/feed/' },
-  // { name: 'DOE Geothermal Technologies Office', url: 'https://www.energy.gov/eere/geothermal/listings/geothermal-news?feed=rss' },
+];
+
+// Named companies/funds worth searching for explicitly in the historical GDELT sweep
+// (src/backfill/gdeltHistorical.js) — surfaced during backfill source research
+// (2026-09-02) as companies without a crawlable news archive of their own. Combined
+// with "geothermal" in the query (not used bare) to avoid false positives from generic
+// words like "Canopus" or "Critical Energy" matching unrelated results.
+const NAMED_COMPANY_TERMS = [
+  'Fervo', 'Zanskar', 'Hephae', 'Mazama Energy', '"400C Energy"', 'Quaise',
+  '"Underground Ventures"', 'Borobotics', '"GA Drilling"', 'TerraFerno', '"Critical Energy" geothermal',
 ];
 
 // GDELT DOC 2.0 catch-all query — see architecture-proposal.md for coverage/rate-limit
@@ -39,4 +51,4 @@ const PREFILTER_KEYWORDS = [
   'joint venture', 'backed', 'million', 'billion', 'award', 'subsidy', 'incentive',
 ];
 
-module.exports = { RSS_FEEDS, GDELT_QUERY, PREFILTER_KEYWORDS };
+module.exports = { RSS_FEEDS, GDELT_QUERY, PREFILTER_KEYWORDS, NAMED_COMPANY_TERMS };

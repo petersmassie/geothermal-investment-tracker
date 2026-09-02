@@ -11,6 +11,8 @@
     "migrate": "node db/migrate.js",
     "fix:qualifiers": "node db/fix_invalid_qualifiers.js",
     "collect": "node src/collector/index.js",
+    "backfill": "node src/backfill/index.js",
+    "test:gdelt": "node db/test_gdelt_connectivity.js",
     "web": "node src/web/server.js",
     "dev:web": "node src/web/server.js"
   },
