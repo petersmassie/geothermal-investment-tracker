@@ -9,7 +9,20 @@
 // shape fetchRssArticles/fetchGdeltArticles use, so everything downstream (prefilter,
 // extraction, dedup, insert — see src/collector/processArticle.js) is unchanged.
 
-const USER_AGENT = 'Mozilla/5.0 (compatible; geothermal-investment-tracker/0.1)';
+// A real browser UA + the headers a real browser actually sends. The self-identifying
+// UA these crawlers used at first ("...geothermal-investment-tracker/0.1") got a 403
+// from ThinkGeoenergy when run from Render specifically — consistent with bot-defense
+// software (most WordPress sites at this traffic tier sit behind Cloudflare) flagging
+// both the UA string and Render's IP range as non-browser traffic. This won't
+// necessarily fix an IP-range-level block (that needs verifying for real, not guessing),
+// but it's the first real lever to pull, and it's what fetchArticleText.js already uses
+// successfully for individual article pages on other sites.
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+const BROWSER_HEADERS = {
+  'User-Agent': USER_AGENT,
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
 
 /**
  * ThinkGeoenergy's Finance category archive — https://www.thinkgeoenergy.com/category/finance/
@@ -87,7 +100,7 @@ async function fetchDoeArchivePage(page) {
 
 async function fetchHtml(url) {
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(20000) });
+    const res = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(20000) });
     if (!res.ok) {
       console.error(`[archiveSources] ${url} -> HTTP ${res.status}`);
       return null;
