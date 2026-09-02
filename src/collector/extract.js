@@ -1,6 +1,8 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { extractionSchema } = require('../shared/extractionSchema');
-const { DEAL_TYPE_QUALIFIER, CAPITAL_SOURCE_QUALIFIER } = require('../shared/taxonomy');
+const {
+  DEAL_TYPE, CAPITAL_SOURCE, TECH_CATEGORY, DEAL_TYPE_QUALIFIER, CAPITAL_SOURCE_QUALIFIER,
+} = require('../shared/taxonomy');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -61,12 +63,12 @@ const SYSTEM_PROMPT = `You extract structured geothermal energy investment/fundi
  * Roll up the model's confidence_signals into a high/medium/low label. Deliberately
  * rule-based rather than trusting a self-reported score (see architecture-proposal.md §2):
  * a deal only counts as "high" confidence when the concrete, checkable signals all line up.
- * hadInvalidQualifier (see sanitizeQualifiers below) always caps it at "low" — a model
+ * hadInvalidField (see sanitizeExtraction below) always caps it at "low" — a model
  * that couldn't fit its own answer into the closed taxonomy is not a deal to auto-publish.
  */
-function computeConfidence(result, hadInvalidQualifier = false) {
+function computeConfidence(result, hadInvalidField = false) {
   if (!result.is_relevant) return 'low';
-  if (hadInvalidQualifier) return 'low';
+  if (hadInvalidField) return 'low';
   const s = result.confidence_signals || {};
   const hasCore = Boolean(result.recipient) && result.deal_type && result.tech_category;
   if (!hasCore) return 'low';
@@ -79,19 +81,33 @@ function computeConfidence(result, hadInvalidQualifier = false) {
 }
 
 /**
- * The Claude API treats a tool-use JSON schema's "enum" list as guidance, not a hard
- * constraint — it does not reject a response that ignores it. In production this showed
- * up as a qualifier field coming back as free descriptive text instead of one of the
- * closed-list codes, which then displayed raw in the dashboard. Re-validate every
- * qualifier here against the real taxonomy list for its parent value rather than
- * trusting the model. A parent value whose list is empty (deal_type "other", capital_source
- * "unclear") is a deliberate free-text bucket — those pass through capped to a sane
- * length, not rejected. Returns whether anything had to be dropped, so the caller can
- * force the deal to review instead of silently publishing something whose own taxonomy
- * fields didn't fit the taxonomy. (tech_category has no qualifier tier as of taxonomy
- * v3 — it's a single flat field, validated the same way deal_type/capital_source
- * themselves are, by the Postgres CHECK constraint on insert.)
+ * The Claude API treats a tool-use JSON schema's "enum" (and even "type") as guidance,
+ * not a hard constraint — it does not reject a response that ignores it. In production
+ * this has shown up twice, both against Postgres CHECK/NOT NULL constraints that only
+ * fire at insert time (deals_tech_category_check, deals_deal_type_check,
+ * deal_investors_capital_source_check): once as a qualifier field coming back as free
+ * descriptive text instead of a closed-list code (fixed below via normalizeQualifier),
+ * and once as tech_category/deal_type/capital_source themselves coming back outside
+ * their allowed lists — an entire backfill batch failed on this second case, every
+ * failure surfacing only as a raw "violates check constraint" error from the INSERT,
+ * with nothing having validated the model's answer against the taxonomy first. Every
+ * closed-vocabulary field the DB enforces with NOT NULL + CHECK must be re-validated
+ * here, with a real fallback value, BEFORE it ever reaches db.insertDeal — a thrown
+ * constraint violation is a worse outcome than a low-confidence guess, because
+ * (per callModel's contract below) a thrown error looks identical to a genuine API
+ * failure and blocks the URL from ever being marked seen, so it would just fail the
+ * same way forever on every retry instead of landing in the review queue once.
+ *
+ * Each field's fallback is deliberately its own taxonomy's "doesn't fit elsewhere"
+ * bucket (deal_type -> "other", capital_source -> "unclear", tech_category ->
+ * "cross_cutting_or_other") rather than a made-up value, and always forces the deal to
+ * low confidence / review — never auto-published on a guessed taxonomy field.
  */
+function normalizeEnumField(value, allowed, fallback) {
+  if (value && allowed.includes(value)) return { value, invalid: false };
+  return { value: fallback, invalid: true };
+}
+
 function normalizeQualifier(parentValue, qualifierValue, qualifierMap) {
   if (!qualifierValue) return { value: null, invalid: false };
   const allowed = qualifierMap[parentValue];
@@ -101,17 +117,48 @@ function normalizeQualifier(parentValue, qualifierValue, qualifierMap) {
   return { value: null, invalid: true };
 }
 
-function sanitizeQualifiers(result) {
+/**
+ * Validates and repairs a raw extraction result in place so it can never violate a DB
+ * constraint, regardless of what the model actually returned. Returns whether anything
+ * had to be corrected, so the caller can force the deal to low confidence / review
+ * rather than silently publishing something the taxonomy had to be guessed for.
+ */
+function sanitizeExtraction(result) {
   let invalidFound = false;
+
+  const dealType = normalizeEnumField(result.deal_type, DEAL_TYPE, 'other');
+  result.deal_type = dealType.value;
+  invalidFound = invalidFound || dealType.invalid;
+
+  const tech = normalizeEnumField(result.tech_category, TECH_CATEGORY, 'cross_cutting_or_other');
+  result.tech_category = tech.value;
+  invalidFound = invalidFound || tech.invalid;
 
   const deal = normalizeQualifier(result.deal_type, result.deal_type_qualifier, DEAL_TYPE_QUALIFIER);
   result.deal_type_qualifier = deal.value;
   invalidFound = invalidFound || deal.invalid;
 
-  for (const inv of result.investors || []) {
-    const cap = normalizeQualifier(inv.capital_source, inv.capital_source_qualifier, CAPITAL_SOURCE_QUALIFIER);
-    inv.capital_source_qualifier = cap.value;
+  // investors is required to be an array by the schema, but that's exactly the kind of
+  // constraint the model doesn't always honor (seen in production as a single object
+  // instead of an array) — normalize its shape here rather than trusting it downstream.
+  if (Array.isArray(result.investors)) {
+    // ok as-is
+  } else if (result.investors && typeof result.investors === 'object') {
+    result.investors = [result.investors];
+    invalidFound = true;
+  } else {
+    result.investors = [];
+    invalidFound = true;
+  }
+
+  for (const inv of result.investors) {
+    const cap = normalizeEnumField(inv.capital_source, CAPITAL_SOURCE, 'unclear');
+    inv.capital_source = cap.value;
     invalidFound = invalidFound || cap.invalid;
+
+    const qual = normalizeQualifier(inv.capital_source, inv.capital_source_qualifier, CAPITAL_SOURCE_QUALIFIER);
+    inv.capital_source_qualifier = qual.value;
+    invalidFound = invalidFound || qual.invalid;
   }
 
   return invalidFound;
@@ -147,11 +194,17 @@ async function extractDeal(article, articleText) {
 
   if (!result.is_relevant) return null;
 
-  const hadInvalidQualifier = sanitizeQualifiers(result);
+  // recipient is NOT NULL in the deals table and, unlike the taxonomy fields above,
+  // has no sane fallback value to substitute — a deal with no named recipient isn't
+  // usable data. Treat it the same as "not relevant" rather than letting the insert
+  // fail on a constraint we could have caught here.
+  if (!result.recipient || !String(result.recipient).trim()) return null;
+
+  const hadInvalidField = sanitizeExtraction(result);
 
   return {
     ...result,
-    confidence: computeConfidence(result, hadInvalidQualifier),
+    confidence: computeConfidence(result, hadInvalidField),
   };
 }
 
