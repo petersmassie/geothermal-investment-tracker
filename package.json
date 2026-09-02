@@ -12,6 +12,8 @@
     "fix:qualifiers": "node db/fix_invalid_qualifiers.js",
     "collect": "node src/collector/index.js",
     "backfill": "node src/backfill/index.js",
+    "backfill:discover": "node src/backfill/discoverArchive.js",
+    "backfill:process": "node src/backfill/processQueueFile.js",
     "test:gdelt": "node db/test_gdelt_connectivity.js",
     "web": "node src/web/server.js",
     "dev:web": "node src/web/server.js"
