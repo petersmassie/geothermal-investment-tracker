@@ -121,22 +121,31 @@ function sanitizeQualifiers(result) {
  * Run structured extraction on one article. Tries the cheap model first; if the result
  * comes back relevant but with weak confidence signals, re-runs once on the escalation
  * model (more capable models are less likely to mis-classify ambiguous phrasing) before
- * settling on a final answer. Returns null if the article is not relevant.
+ * settling on a final answer. Returns null if the article is genuinely not relevant.
+ *
+ * Deliberately lets a call failure (network error, bad API key, rate limit, ...) THROW
+ * rather than returning null — see callModel below for why this distinction matters.
+ * The escalation call is the one exception: if the base call already succeeded and only
+ * the escalation call fails, that's not worth losing a perfectly good base result over,
+ * so that failure is caught and logged, falling back to the base result instead.
  */
 async function extractDeal(article, articleText) {
   const userText = buildUserMessage(article, articleText);
 
   let result = await callModel(process.env.EXTRACTION_MODEL || 'claude-haiku-4-5', userText);
-  if (result && result.is_relevant) {
+  if (result.is_relevant) {
     const signals = result.confidence_signals || {};
     const weakSignalCount = [signals.amount_stated, signals.recipient_named_specifically, signals.investor_named].filter((v) => v === false).length;
     if (weakSignalCount >= 2) {
-      const escalated = await callModel(process.env.ESCALATION_MODEL || 'claude-sonnet-4-5', userText);
-      if (escalated) result = escalated;
+      try {
+        result = await callModel(process.env.ESCALATION_MODEL || 'claude-sonnet-4-5', userText);
+      } catch (err) {
+        console.error(`[extract] Escalation call failed, keeping base-model result: ${err.message}`);
+      }
     }
   }
 
-  if (!result || !result.is_relevant) return null;
+  if (!result.is_relevant) return null;
 
   const hadInvalidQualifier = sanitizeQualifiers(result);
 
@@ -158,22 +167,31 @@ function buildUserMessage(article, articleText) {
   ].filter(Boolean).join('\n');
 }
 
+/**
+ * Deliberately does NOT catch errors here — a failed API call (bad/missing key, network
+ * error, rate limit, timeout) is a genuinely different situation from the model
+ * successfully looking at an article and deciding it's not a deal, and conflating the
+ * two was a real production bug: every article whose extraction call failed got
+ * permanently recorded as "checked, not relevant" (see processArticle.js's use of
+ * hasSeenUrl), which silently discarded them — a subsequent, correctly-configured run
+ * would see them as already processed and skip them, even though they were never
+ * actually looked at. Letting this throw means the caller's per-article try/catch (see
+ * src/collector/index.js, src/backfill/index.js, src/backfill/processQueueFile.js) logs
+ * it as an error WITHOUT recording the article as seen — so it's naturally retried on
+ * the next run instead of being lost.
+ */
 async function callModel(model, userText) {
-  try {
-    const response = await anthropic.messages.create({
-      model,
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userText }],
-      tools: [{ ...toolFromSchema(extractionSchema) }],
-      tool_choice: { type: 'tool', name: extractionSchema.name },
-    });
-    const toolUse = response.content.find((block) => block.type === 'tool_use');
-    return toolUse ? toolUse.input : null;
-  } catch (err) {
-    console.error(`[extract] Model call failed (${model}): ${err.message}`);
-    return null;
-  }
+  const response = await anthropic.messages.create({
+    model,
+    max_tokens: 1024,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: userText }],
+    tools: [{ ...toolFromSchema(extractionSchema) }],
+    tool_choice: { type: 'tool', name: extractionSchema.name },
+  });
+  const toolUse = response.content.find((block) => block.type === 'tool_use');
+  if (!toolUse) throw new Error(`No tool_use block in response from ${model}`);
+  return toolUse.input;
 }
 
 function toolFromSchema(schema) {
