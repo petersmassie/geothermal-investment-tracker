@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { Pool, types } = require('pg');
-const { TECH_CATEGORY_QUALIFIER, DEAL_TYPE_QUALIFIER, CAPITAL_SOURCE_QUALIFIER } = require('../src/shared/taxonomy');
+const { DEAL_TYPE_QUALIFIER, CAPITAL_SOURCE_QUALIFIER } = require('../src/shared/taxonomy');
 
 types.setTypeParser(1700, (val) => (val === null ? null : parseFloat(val)));
 
@@ -11,19 +11,20 @@ const pool = new Pool({
 
 // One-off cleanup for deals extracted before src/collector/extract.js's sanitizeQualifiers()
 // existed (2026-09-02) — the Claude API doesn't hard-enforce tool-use enum constraints, so a
-// handful of deals got a full descriptive sentence in tech_type_qualifier instead of a real
-// taxonomy code (e.g. "heat_pump_or_district_heating"). This nulls out anything that doesn't
-// match its closed list, the same validation new extractions now get automatically, and drops
-// affected deals' confidence to 'low' so they sit in (or return to) the review queue rather
-// than displaying bad data or having been auto-published on the strength of a bad field.
-// Safe to re-run — it's a no-op once the data is clean.
+// handful of deals got a full descriptive sentence in a qualifier field instead of a real
+// taxonomy code. This nulls out anything that doesn't match its closed list, the same
+// validation new extractions now get automatically, and drops affected deals' confidence to
+// 'low' so they sit in (or return to) the review queue rather than displaying bad data or
+// having been auto-published on the strength of a bad field. Safe to re-run — it's a no-op
+// once the data is clean. (tech_category has no qualifier tier as of taxonomy v3 — bad
+// tech_category data from before that change is handled by db/migrations/002_simplify_tech_taxonomy.sql
+// instead, not here.)
 async function main() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     let totalFixed = 0;
 
-    totalFixed += await fixQualifierColumn(client, 'tech_category', 'tech_type_qualifier', TECH_CATEGORY_QUALIFIER);
     totalFixed += await fixQualifierColumn(client, 'deal_type', 'deal_type_qualifier', DEAL_TYPE_QUALIFIER);
     totalFixed += await fixInvestorQualifiers(client);
 

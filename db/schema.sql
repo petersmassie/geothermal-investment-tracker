@@ -1,9 +1,9 @@
--- Geothermal Investment Tracker — schema v2 (taxonomy v3 + two-tier tech taxonomy +
--- fuzzy dedup support, 2026-09-01). This file is the target schema for a FRESH
--- install (CREATE TABLE IF NOT EXISTS throughout, so re-running it is always safe).
--- An already-deployed database that was created under schema v1 needs
--- db/migrations/001_tech_taxonomy_and_dedup.sql to get here — see db/migrate.js,
--- which applies this file and then every migration in order automatically.
+-- Geothermal Investment Tracker — schema v3 (deal taxonomy v3 + fuzzy dedup support,
+-- 2026-09-01; flat single-field tech taxonomy, 2026-09-02). This file is the target
+-- schema for a FRESH install (CREATE TABLE IF NOT EXISTS throughout, so re-running it
+-- is always safe). An already-deployed database needs the migrations in
+-- db/migrations/, in order, to get here — see db/migrate.js, which applies this file
+-- and then every migration in order automatically.
 
 CREATE EXTENSION IF NOT EXISTS pg_trgm; -- fuzzy text matching, used for duplicate detection
 
@@ -16,11 +16,11 @@ CREATE TABLE IF NOT EXISTS deals (
   currency              TEXT,
   amount_usd            NUMERIC, -- normalized at write time for cross-currency aggregation; null if amount/currency undisclosed or conversion unavailable
   announced_date        DATE,
-  -- Two-tier tech taxonomy: tech_category is which part of the geothermal value chain
-  -- a deal targets (resource_development vs. enabling technology like drilling); the
-  -- specific technology (EGS, millimeter-wave drilling, etc.) goes in tech_type_qualifier.
-  tech_category         TEXT NOT NULL CHECK (tech_category IN ('resource_development','drilling_or_subsurface_technology','equipment_or_components','other_enabling_technology')),
-  tech_type_qualifier   TEXT,
+  -- Technology taxonomy v3 (simplified 2026-09-02): a single flat field, no qualifier
+  -- tier — see src/shared/taxonomy.js for why (matches how the IEA itself tracks
+  -- geothermal investment, rather than the more granular category+qualifier split v2
+  -- used, which proved to have blurrier edges than the model could reliably classify).
+  tech_category         TEXT NOT NULL CHECK (tech_category IN ('conventional','egs','ags','shr','direct_use','cross_cutting_or_other')),
   geography_country     TEXT,
   geography_region      TEXT,
   source_url            TEXT NOT NULL,

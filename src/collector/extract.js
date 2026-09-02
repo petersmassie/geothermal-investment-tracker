@@ -1,6 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { extractionSchema } = require('../shared/extractionSchema');
-const { TECH_CATEGORY_QUALIFIER, DEAL_TYPE_QUALIFIER, CAPITAL_SOURCE_QUALIFIER } = require('../shared/taxonomy');
+const { DEAL_TYPE_QUALIFIER, CAPITAL_SOURCE_QUALIFIER } = require('../shared/taxonomy');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -36,17 +36,26 @@ const SYSTEM_PROMPT = `You extract structured geothermal energy investment/fundi
 7. excerpt must be a real, short, verbatim quote from the article text supporting the
    extraction — not a paraphrase.
 
-8. tech_category vs. tech_type_qualifier: tech_category is which part of the geothermal
-   value chain the deal targets, not the specific technology. A company building or
-   operating an actual geothermal power/heat project (EGS, conventional hydrothermal, AGS,
-   direct-use, heat pump/district heating) is "resource_development" — the specific type
-   goes in tech_type_qualifier. A company building drilling hardware, subsurface imaging,
-   or exploration technology that could serve future resource-development projects but is
-   not itself a resource project — e.g. Quaise Energy's millimeter-wave drilling — is
-   "drilling_or_subsurface_technology", NOT resource_development, even if the article
-   mentions EGS or superhot rock as the eventual application. A hardware/materials supplier
-   (turbines, heat exchangers, high-temperature components) is "equipment_or_components".
-   Only use "other_enabling_technology" when none of the above fit.`;
+8. tech_category — pick exactly one, by what the deal is actually for:
+   - "conventional": classic hydrothermal power generation from a naturally accessible
+     resource, no stimulation technique involved.
+   - "egs": enhanced geothermal systems (includes open-loop).
+   - "ags": advanced/closed-loop geothermal systems.
+   - "shr": superhot rock — only when the article specifically frames it that way (not
+     every deep/next-generation project is SHR; don't infer it from "next-generation"
+     framing alone).
+   - "direct_use": heat pump, district heating, or another non-power-generation use of
+     the resource (e.g. residential ground-source heat pumps, a municipal heating
+     network).
+   - "cross_cutting_or_other": a company selling enabling technology or hardware that
+     could serve any future resource-development project — drilling equipment,
+     subsurface imaging/exploration, turbines, heat exchangers, high-temperature
+     materials — rather than developing or operating a resource project itself. This is
+     about what the RECIPIENT's business is, not what technology the article mentions in
+     passing: Quaise Energy sells drilling technology, so a Quaise deal is
+     "cross_cutting_or_other" even when the article discusses EGS or superhot rock as
+     the eventual downstream application. Also use this value for anything that
+     genuinely doesn't fit the other five.`;
 
 /**
  * Roll up the model's confidence_signals into a high/medium/low label. Deliberately
@@ -72,15 +81,16 @@ function computeConfidence(result, hadInvalidQualifier = false) {
 /**
  * The Claude API treats a tool-use JSON schema's "enum" list as guidance, not a hard
  * constraint — it does not reject a response that ignores it. In production this showed
- * up as tech_type_qualifier coming back as a full descriptive sentence (e.g. "Geothermal
- * boreholes with heat pumps for district heating...") instead of one of the closed-list
- * codes (e.g. "heat_pump_or_district_heating"), which then displayed raw in the dashboard.
- * Re-validate every qualifier here against the real taxonomy list for its parent value
- * rather than trusting the model. A parent value whose list is empty (deal_type "other",
- * tech_category "other_enabling_technology", capital_source "unclear") is a deliberate
- * free-text bucket — those pass through capped to a sane length, not rejected. Returns
- * whether anything had to be dropped, so the caller can force the deal to review instead
- * of silently publishing something whose own taxonomy fields didn't fit the taxonomy.
+ * up as a qualifier field coming back as free descriptive text instead of one of the
+ * closed-list codes, which then displayed raw in the dashboard. Re-validate every
+ * qualifier here against the real taxonomy list for its parent value rather than
+ * trusting the model. A parent value whose list is empty (deal_type "other", capital_source
+ * "unclear") is a deliberate free-text bucket — those pass through capped to a sane
+ * length, not rejected. Returns whether anything had to be dropped, so the caller can
+ * force the deal to review instead of silently publishing something whose own taxonomy
+ * fields didn't fit the taxonomy. (tech_category has no qualifier tier as of taxonomy
+ * v3 — it's a single flat field, validated the same way deal_type/capital_source
+ * themselves are, by the Postgres CHECK constraint on insert.)
  */
 function normalizeQualifier(parentValue, qualifierValue, qualifierMap) {
   if (!qualifierValue) return { value: null, invalid: false };
@@ -93,10 +103,6 @@ function normalizeQualifier(parentValue, qualifierValue, qualifierMap) {
 
 function sanitizeQualifiers(result) {
   let invalidFound = false;
-
-  const tech = normalizeQualifier(result.tech_category, result.tech_type_qualifier, TECH_CATEGORY_QUALIFIER);
-  result.tech_type_qualifier = tech.value;
-  invalidFound = invalidFound || tech.invalid;
 
   const deal = normalizeQualifier(result.deal_type, result.deal_type_qualifier, DEAL_TYPE_QUALIFIER);
   result.deal_type_qualifier = deal.value;

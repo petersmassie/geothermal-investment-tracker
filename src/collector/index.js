@@ -89,7 +89,6 @@ async function processArticle(article, stats) {
     amount_usd,
     announced_date: extracted.announced_date,
     tech_category: extracted.tech_category,
-    tech_type_qualifier: extracted.tech_type_qualifier,
     geography_country: extracted.geography_country,
     geography_region: extracted.geography_region,
     source_url: article.source_url,

@@ -38,43 +38,25 @@ const DEAL_TYPE_QUALIFIER = {
   other: [], // free text only — this bucket exists precisely for what doesn't fit elsewhere
 };
 
-// Technology taxonomy v2 (revised 2026-09-01 — the original single-axis TECH_TYPE
-// conflated "what kind of geothermal resource/system" with "what part of the value
-// chain" a deal targets. A deal like Quaise Energy's (millimeter-wave drilling tech
-// to reach superhot rock) isn't EGS/AGS/hydrothermal/etc. itself — it's an enabling
-// technology that could serve any future resource-development project. Split into a
-// category (which part of the value chain) and a qualifier (the specific technology
-// within that category), same pattern as capital source and deal type.
+// Technology taxonomy v3 (simplified 2026-09-02 — v2's category+qualifier split
+// (resource_development / drilling_or_subsurface_technology / equipment_or_components,
+// each with its own qualifier list) was more granular than how the technology's own
+// standard-setter tracks it: the IEA's geothermal investment reporting uses just
+// "conventional" vs. "next-generation" (EGS/AGS/superhot rock aggregated together),
+// and doesn't track drilling-technology vendors as a separate funding category at all.
+// That extra granularity is also the likely cause of the free-text qualifier failures
+// seen in production (more boxes, blurrier edges, more chances for the model to punt
+// rather than pick one). Flattened to a single field, six values, no qualifier tier.
 const TECH_CATEGORY = [
-  'resource_development', // the actual generation/heat system — what TECH_TYPE used to mean entirely
-  'drilling_or_subsurface_technology', // e.g. Quaise's millimeter-wave drilling, subsurface imaging/exploration
-  'equipment_or_components', // turbines, heat exchangers, high-temperature materials, etc.
-  'other_enabling_technology',
+  'conventional', // classic hydrothermal power generation — naturally accessible resource, no stimulation
+  'egs', // enhanced geothermal systems, includes open-loop
+  'ags', // advanced geothermal systems, includes closed-loop
+  'shr', // superhot rock — increasingly tracked as its own frontier distinct from EGS (IEA, CATF)
+  'direct_use', // heat pump / district heating / other non-power-generation resource use
+  'cross_cutting_or_other', // enabling technology (drilling, subsurface imaging, equipment/materials)
+                            // that serves resource-development projects rather than being one itself
+                            // (e.g. Quaise Energy's drilling tech), plus anything else that doesn't fit above
 ];
-
-const TECH_CATEGORY_QUALIFIER = {
-  resource_development: [
-    'egs', // enhanced geothermal systems, includes open-loop
-    'conventional_hydrothermal',
-    'ags', // advanced geothermal systems, includes closed-loop
-    'direct_use',
-    'heat_pump_or_district_heating',
-    'unspecified',
-  ],
-  drilling_or_subsurface_technology: [
-    'millimeter_wave_drilling',
-    'plasma_or_other_advanced_drilling',
-    'subsurface_imaging_or_exploration',
-    'other_drilling_or_subsurface',
-  ],
-  equipment_or_components: [
-    'turbines_or_generation_equipment',
-    'heat_exchangers',
-    'high_temperature_materials',
-    'other_equipment',
-  ],
-  other_enabling_technology: [], // free text — this bucket exists precisely for what doesn't fit elsewhere
-};
 
 const CONFIDENCE = ['high', 'medium', 'low'];
 
@@ -86,7 +68,6 @@ module.exports = {
   DEAL_TYPE,
   DEAL_TYPE_QUALIFIER,
   TECH_CATEGORY,
-  TECH_CATEGORY_QUALIFIER,
   CONFIDENCE,
   REVIEW_STATUS,
 };

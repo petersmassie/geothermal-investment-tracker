@@ -9,31 +9,17 @@ const fmtQuarter = (isoDate) => {
   const q = Math.floor(d.getUTCMonth() / 3) + 1;
   return `Q${q} ${d.getUTCFullYear()}`;
 };
-// Covers both tiers of the tech taxonomy: resource_development's specific
-// technologies (egs, ags, ...) AND the enabling-technology categories themselves
-// (drilling_or_subsurface_technology, etc.), since by-tech chart rows and deal rows
-// can surface either depending on tech_category — see techLabel()/techKey() below.
+// Flat technology taxonomy (v3) — a single field, no qualifier tier.
 const TECH_LABELS = {
-  egs: 'EGS', conventional_hydrothermal: 'Conventional hydrothermal', ags: 'AGS',
-  direct_use: 'Direct use', heat_pump_or_district_heating: 'Heat pump / district heating', unspecified: 'Unspecified',
-  drilling_or_subsurface_technology: 'Drilling / subsurface technology',
-  equipment_or_components: 'Equipment / components',
-  other_enabling_technology: 'Other enabling technology',
+  conventional: 'Conventional', egs: 'EGS', ags: 'AGS', shr: 'Superhot rock',
+  direct_use: 'Direct use', cross_cutting_or_other: 'Cross-cutting / other',
 };
 const TECH_COLORS = {
-  egs: 'var(--series-1)', conventional_hydrothermal: 'var(--series-2)', ags: 'var(--series-3)',
-  direct_use: 'var(--series-4)', heat_pump_or_district_heating: 'var(--series-5)', unspecified: 'var(--series-6)',
-  drilling_or_subsurface_technology: 'var(--series-2)', equipment_or_components: 'var(--series-4)', other_enabling_technology: 'var(--series-6)',
+  conventional: 'var(--series-2)', egs: 'var(--series-1)', ags: 'var(--series-3)',
+  shr: 'var(--series-5)', direct_use: 'var(--series-4)', cross_cutting_or_other: 'var(--series-6)',
 };
-// A deal's display tech key: resource_development shows its specific technology
-// (falls back to 'unspecified'); every enabling-technology category shows as itself,
-// since a further breakdown doesn't apply the same way there.
-function techKey(d) {
-  return d.tech_category === 'resource_development' ? (d.tech_type_qualifier || 'unspecified') : d.tech_category;
-}
 function techLabel(d) {
-  const key = techKey(d);
-  return TECH_LABELS[key] || key;
+  return TECH_LABELS[d.tech_category] || d.tech_category;
 }
 
 async function fetchJson(url, opts) {
@@ -95,8 +81,8 @@ async function loadTechChart() {
   const max = Math.max(1, ...rows.map((r) => r.total_usd));
   document.getElementById('tech-chart').innerHTML = rows.length ? rows.map((r) => `
     <div class="hbar-row">
-      <div class="hbar-label">${TECH_LABELS[r.tech_key] || r.tech_key}</div>
-      <div class="hbar-track"><div class="hbar-fill" style="width:${(r.total_usd / max) * 100}%; background:${TECH_COLORS[r.tech_key] || 'var(--series-6)'}"></div></div>
+      <div class="hbar-label">${TECH_LABELS[r.tech_category] || r.tech_category}</div>
+      <div class="hbar-track"><div class="hbar-fill" style="width:${(r.total_usd / max) * 100}%; background:${TECH_COLORS[r.tech_category] || 'var(--series-6)'}"></div></div>
       <div class="hbar-value">${fmtUsd(r.total_usd)}</div>
     </div>`).join('') : '<p class="empty-state">No data yet.</p>';
 }
@@ -188,7 +174,6 @@ function editRow(d) {
       </td>
       <td>
         <select data-field="tech_category">${optionList(techCategories, d.tech_category)}</select>
-        <input type="text" data-field="tech_type_qualifier" value="${d.tech_type_qualifier || ''}" placeholder="e.g. egs, millimeter_wave_drilling">
       </td>
       <td><input type="date" data-field="announced_date" value="${d.announced_date ? d.announced_date.slice(0, 10) : ''}"></td>
       <td><a href="${d.source_url}" target="_blank" rel="noopener">Source</a></td>

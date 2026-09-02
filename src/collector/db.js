@@ -61,14 +61,14 @@ async function insertDeal(deal, investors) {
     const insertRes = await client.query(
       `INSERT INTO deals (
         recipient, deal_type, deal_type_qualifier, amount, currency, amount_usd,
-        announced_date, tech_category, tech_type_qualifier, geography_country, geography_region,
+        announced_date, tech_category, geography_country, geography_region,
         source_url, source_name, excerpt, confidence, confidence_signals, review_status,
         dedup_key, possible_duplicate_of_id, extraction_model
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
       RETURNING id`,
       [
         deal.recipient, deal.deal_type, deal.deal_type_qualifier, deal.amount, deal.currency, deal.amount_usd,
-        deal.announced_date, deal.tech_category, deal.tech_type_qualifier, deal.geography_country, deal.geography_region,
+        deal.announced_date, deal.tech_category, deal.geography_country, deal.geography_region,
         deal.source_url, deal.source_name, deal.excerpt, deal.confidence, deal.confidence_signals, review_status,
         deal.dedup_key, possible_duplicate_of_id, deal.extraction_model,
       ]

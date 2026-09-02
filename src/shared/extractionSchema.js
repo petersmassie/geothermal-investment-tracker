@@ -4,16 +4,15 @@ const {
   TECH_CATEGORY,
   CAPITAL_SOURCE_QUALIFIER,
   DEAL_TYPE_QUALIFIER,
-  TECH_CATEGORY_QUALIFIER,
 } = require('./taxonomy');
 
 // Flattened qualifier enums for the schema (Claude structured outputs don't support
 // dynamic enum-per-parent-value, so the qualifier field is validated against the full
-// union here and cross-checked against the deal_type/capital_source/tech_category
-// pairing in code — see collector/extract.js).
+// union here and cross-checked against the deal_type/capital_source pairing in code —
+// see collector/extract.js). tech_category has no qualifier tier as of taxonomy v3 —
+// it's a single flat field, see taxonomy.js.
 const ALL_CAPITAL_SOURCE_QUALIFIERS = [...new Set(Object.values(CAPITAL_SOURCE_QUALIFIER).flat())];
 const ALL_DEAL_TYPE_QUALIFIERS = [...new Set(Object.values(DEAL_TYPE_QUALIFIER).flat())];
-const ALL_TECH_CATEGORY_QUALIFIERS = [...new Set(Object.values(TECH_CATEGORY_QUALIFIER).flat())];
 
 // One investor entry. A single-investor deal still produces an array of length 1.
 const investorSchema = {
@@ -64,12 +63,7 @@ const extractionSchema = {
       tech_category: {
         type: ['string', 'null'],
         enum: [...TECH_CATEGORY, null],
-        description: 'Which part of the geothermal value chain this deal targets: resource_development for an actual generation/heat project (EGS, hydrothermal, AGS, direct-use, heat pump), drilling_or_subsurface_technology for enabling drilling/exploration tech that is not itself a resource project (e.g. Quaise-style deep drilling), equipment_or_components for hardware/materials suppliers, or other_enabling_technology.',
-      },
-      tech_type_qualifier: {
-        type: ['string', 'null'],
-        enum: [...ALL_TECH_CATEGORY_QUALIFIERS, null],
-        description: 'The specific technology within tech_category — e.g. "egs" under resource_development, or "millimeter_wave_drilling" under drilling_or_subsurface_technology.',
+        description: 'The geothermal technology this deal targets: conventional (classic hydrothermal power, naturally accessible resource, no stimulation), egs (enhanced geothermal systems), ags (advanced/closed-loop geothermal systems), shr (superhot rock), direct_use (heat pump, district heating, or other non-power-generation resource use), or cross_cutting_or_other (enabling technology like drilling/subsurface imaging/equipment that serves resource-development projects rather than being one itself, e.g. Quaise Energy — plus anything else that does not fit the other values).',
       },
       geography_country: { type: ['string', 'null'] },
       geography_region: { type: ['string', 'null'], description: 'State/province/broader region if stated, e.g. "Nevada" or "Alberta".' },
@@ -89,7 +83,7 @@ const extractionSchema = {
     },
     required: [
       'is_relevant', 'recipient', 'investors', 'deal_type', 'deal_type_qualifier',
-      'amount', 'currency', 'announced_date', 'tech_category', 'tech_type_qualifier',
+      'amount', 'currency', 'announced_date', 'tech_category',
       'geography_country', 'geography_region', 'excerpt', 'confidence_signals',
     ],
     additionalProperties: false,
