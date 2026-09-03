@@ -15,6 +15,7 @@
     "backfill:discover": "node src/backfill/discoverArchive.js",
     "backfill:process": "node src/backfill/processQueueFile.js",
     "test:gdelt": "node db/test_gdelt_connectivity.js",
+    "recheck:amounts": "node db/recheck_amounts.js",
     "web": "node src/web/server.js",
     "dev:web": "node src/web/server.js"
   },
