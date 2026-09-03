@@ -127,6 +127,10 @@ a:hover { text-decoration: underline; }
 .badge.confidence-high { background: color-mix(in srgb, var(--status-good) 18%, transparent); color: var(--status-good); }
 .badge.confidence-medium { background: color-mix(in srgb, var(--status-warning) 22%, transparent); color: #8a5c00; }
 .badge.confidence-low { background: color-mix(in srgb, var(--status-critical) 18%, transparent); color: var(--status-critical); }
+.badge.capital-public { background: color-mix(in srgb, var(--series-1) 18%, transparent); color: var(--series-1); }
+.badge.capital-private { background: color-mix(in srgb, var(--series-3) 18%, transparent); color: var(--series-3); }
+.badge.capital-mixed { background: color-mix(in srgb, var(--series-6) 18%, transparent); color: var(--series-6); }
+.badge.capital-unclear { background: color-mix(in srgb, var(--text-muted) 18%, transparent); color: var(--text-muted); }
 
 .review-actions button { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; margin-right: 6px; }
 .review-actions button.approve { color: var(--status-good); }

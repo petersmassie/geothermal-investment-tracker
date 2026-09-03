@@ -26,6 +26,18 @@ const SYSTEM_PROMPT = `You extract structured geothermal energy investment/fundi
 4. Never invent a number. If an amount is described vaguely ("a significant investment", "an
    undisclosed sum"), leave amount and currency null rather than estimating.
 
+   amount must always be the FULL numeric value, never the shorthand digits as written.
+   Expand every K/M/B/thousand/million/billion suffix or word — whether attached to a
+   currency symbol, a currency code, or bare — before returning it:
+     "$1M" / "$1 M" / "$1m" / "1 million" -> amount: 1000000
+     "€30m" / "EUR 30 million"            -> amount: 30000000
+     "$1.8bn" / "$1.8 billion"            -> amount: 1800000000
+     "£700k" / "700 thousand"             -> amount: 700000
+     "NZD 1 billion"                      -> amount: 1000000000
+   Never return the bare shorthand digits (e.g. 1, 30, 1.8, 700) as amount — that silently
+   understates the deal by a factor of a thousand or more and is treated as a data-quality
+   failure, not a rounding choice.
+
 5. investors is an array — one entry per distinct named investor/funding source. Most deals
    have exactly one. Only split amount_attributed per investor if the article itself states
    individual amounts; otherwise leave amount_attributed null on each entry and rely on the
@@ -123,8 +135,21 @@ function normalizeQualifier(parentValue, qualifierValue, qualifierMap) {
  * had to be corrected, so the caller can force the deal to low confidence / review
  * rather than silently publishing something the taxonomy had to be guessed for.
  */
+// Below this, a non-null amount is almost certainly the bare shorthand digits the model
+// was told not to return (e.g. 1 instead of 1000000 for "$1M") rather than a real deal —
+// no geothermal investment/grant/financing this dataset tracks is genuinely sub-$1,000.
+// This is a backstop for when the prompt rule above still isn't followed, not a
+// replacement for it: it can't fix the number (we don't know if "$1M" or "1 million"
+// was the source text), so it just forces the deal to review instead of silently
+// auto-publishing a figure that's off by a factor of a thousand or more.
+const MIN_PLAUSIBLE_AMOUNT = 1000;
+
 function sanitizeExtraction(result) {
   let invalidFound = false;
+
+  if (result.amount != null && result.amount < MIN_PLAUSIBLE_AMOUNT) {
+    invalidFound = true;
+  }
 
   const dealType = normalizeEnumField(result.deal_type, DEAL_TYPE, 'other');
   result.deal_type = dealType.value;

@@ -104,6 +104,18 @@ function confidenceBadge(level) {
 function investorNames(deal) {
   return (deal.investors || []).map((i) => i.investor_name).join(', ') || '—';
 }
+// source_mix is computed server-side per deal from its investors' capital_source
+// (public/private/unclear per investor -> public/private/mixed/unclear per deal — see
+// api.js's deriveSourceMix) but was never actually rendered anywhere in the UI, even
+// though it was already in every /api/deals response — the taxonomy captured it, the
+// review queue just never showed it, so there was no way to see or correct it.
+function capitalSourceBadge(deal) {
+  const mix = deal.source_mix || 'unclear';
+  const title = (deal.investors || [])
+    .map((i) => `${i.investor_name}: ${i.capital_source}${i.capital_source_qualifier ? ` (${i.capital_source_qualifier.replace(/_/g, ' ')})` : ''}`)
+    .join('\n');
+  return `<span class="badge capital-${mix}" title="${title.replace(/"/g, '&quot;')}">${mix}</span>`;
+}
 function dealLabel(deal) {
   const parts = [deal.deal_type];
   if (deal.deal_type_qualifier) parts.push(deal.deal_type_qualifier.replace(/_/g, ' '));
@@ -117,6 +129,7 @@ async function loadDealFeed() {
     <tr>
       <td>${d.recipient || '—'}</td>
       <td>${investorNames(d)}</td>
+      <td>${capitalSourceBadge(d)}</td>
       <td>${dealLabel(d)}</td>
       <td>${d.amount ? `${fmtUsd(d.amount_usd || d.amount)}${d.currency && d.currency !== 'USD' ? ` (${d.amount.toLocaleString()} ${d.currency})` : ''}` : 'Undisclosed'}</td>
       <td>${techLabel(d)}</td>
@@ -124,7 +137,7 @@ async function loadDealFeed() {
       <td>${d.announced_date || '—'}</td>
       <td>${confidenceBadge(d.confidence)}</td>
       <td><a href="${d.source_url}" target="_blank" rel="noopener">Source</a></td>
-    </tr>`).join('') : '<tr><td colspan="9" class="empty-state">No published deals yet — the collector runs daily.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="10" class="empty-state">No published deals yet — the collector runs daily.</td></tr>';
 }
 
 let TAXONOMY = null;
@@ -143,6 +156,7 @@ function viewRow(d) {
       <td>${d.recipient || '(unnamed)'}${duplicateWarning(d)}</td>
       <td>${dealLabel(d)}</td>
       <td>${d.amount ? fmtUsd(d.amount_usd || d.amount) : 'Undisclosed'}</td>
+      <td>${capitalSourceBadge(d)}</td>
       <td>${techLabel(d)}</td>
       <td>${d.announced_date ? d.announced_date.slice(0, 10) : '—'}</td>
       <td><a href="${d.source_url}" target="_blank" rel="noopener">Source</a></td>
@@ -172,6 +186,7 @@ function editRow(d) {
         <input type="number" data-field="amount" value="${d.amount || ''}" placeholder="Amount" style="width:90px">
         <input type="text" data-field="currency" value="${d.currency || ''}" placeholder="USD" style="width:50px">
       </td>
+      <td>${capitalSourceBadge(d)}</td>
       <td>
         <select data-field="tech_category">${optionList(techCategories, d.tech_category)}</select>
       </td>
